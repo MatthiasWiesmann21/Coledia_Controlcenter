@@ -1,0 +1,159 @@
+// Coledia Controlcenter — own database (NOT shared with the coledia app).
+// Better-Auth core models + customer-facing Container/Subscription/Payment.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Better-Auth core models ────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  name          String?
+  image         String?
+  // Controlcenter role
+  role          String   @default("customer") // customer | admin
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  containers    Container[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+  issuer                String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String   @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+// ─── Containers (customer-facing coledia app instances) ─────────
+
+model Container {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?  @db.Text
+  type        String   @default("club")      // club | association | team | company | other (marketing info only)
+
+  subdomain   String   @unique               // validated against RESERVED_SUBDOMAINS
+  customDomain String?
+
+  themePreset String   @default("coledia")   // coledia | ocean | forest | midnight | sunset | rose
+  themeMode   String?                        // light | dark | system
+
+  plan        String   @default("starter")   // starter | club | organization
+  status      String   @default("draft")
+  // draft → pending_payment → seeding → pending_provisioning → active | suspended | cancelled
+
+  // UUID generated at container creation; passed to the app's internal API as
+  // the explicit Tenant.id; later used as TENANT_ID env var in the Dokploy container.
+  appTenantId String   @unique
+
+  provisionNotes String? @db.Text            // admin notes from the manual Dokploy step
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscription Subscription?
+  payments     Payment[]
+  events       ContainerEvent[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ─── Billing ─────────────────────────────────────────────────────
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  containerId          String    @unique // one subscription per container
+  stripeCustomerId     String?
+  stripeSubscriptionId String?   @unique
+  plan                 String    @default("starter")
+  status               String    @default("incomplete") // incomplete | trialing | active | past_due | canceled
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  container            Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model Payment {
+  id               String    @id @default(cuid())
+  containerId      String
+  stripeInvoiceId  String?   @unique
+  amount           Decimal   @db.Decimal(10, 2)
+  currency         String    @default("chf")
+  status           String    @default("pending") // pending | succeeded | failed | refunded
+  hostedInvoiceUrl String?
+  createdAt        DateTime  @default(now())
+  container        Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  @@index([containerId, createdAt])
+  @@index([status])
+}
+
+// ─── Container event log (lifecycle + sync history) ─────────────
+
+model ContainerEvent {
+  id          String   @id @default(cuid())
+  containerId String
+  type        String   // created | payment_completed | seeded | provisioned | suspended | reactivated | plan_changed | sync_failed | ...
+  message     String?  @db.Text
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  @@index([containerId, createdAt])
+}
