@@ -82,7 +82,14 @@ model Container {
 
   name        String
   description String?  @db.Text
-  type        String   @default("club")      // club | association | team | company | other (marketing info only)
+  type        String   @default("starter")   // the plan tier: starter | club | organization (= Tenant.plan in the app DB)
+
+  // Owner of the app tenant (created in the app DB via the internal API)
+  ownerMode         String  @default("same") // same (Controlcenter account) | custom
+  ownerEmail        String?                  // email of the app owner
+  ownerName         String?
+  ownerUsername     String?                  // app UserProfile.username
+  ownerPasswordHash String?                  // better-auth password hash (never plaintext)
 
   subdomain   String   @unique               // validated against RESERVED_SUBDOMAINS
   customDomain String?

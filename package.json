@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts"
+    "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
+    "stripe:replay": "node scripts/replay-checkout.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

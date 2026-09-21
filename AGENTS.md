@@ -33,7 +33,7 @@ container's `appTenantId` (a UUID chosen at container creation).
 ## Data model (prisma/schema.prisma)
 
 - Better-Auth tables: `User` (with `role`: customer|admin), `Session`, `Account`, `Verification`
-- `Container` — name/description/type (marketing info only)/subdomain/themePreset/themeMode/plan/status/`appTenantId` (explicit UUID → app Tenant.id + Dokploy TENANT_ID)
+- `Container` — name/description/subdomain/themePreset/themeMode/plan/status/`appTenantId` (explicit UUID → app Tenant.id + Dokploy TENANT_ID); `type` mirrors the plan tier (starter|club|organization) — the onboarding plan selector is the container type selector. Owner fields: `ownerMode` (same|custom), `ownerEmail`, `ownerName`, `ownerUsername`, `ownerPasswordHash` (better-auth scrypt hash — plaintext is never stored; it becomes the app owner's credential account)
 - `Subscription` — one per container (`containerId @unique`), mirrors Stripe state
 - `Payment` — invoice records (incl. failed payments for the admin view)
 - `ContainerEvent` — lifecycle/audit log (created, payment_completed, seeded, provisioned, suspended, sync_failed, …)
@@ -52,7 +52,20 @@ subscription ⇒ container suspended (no free fallback).
   `APP_INTERNAL_API_SECRET` — creates Tenant (explicit UUID id) + Branding +
   owner User/Membership in the app DB. Idempotent via `provisionId`/`tenantId`.
 - Sync: PATCH `/api/internal/tenants/{appTenantId}` for plan/status/branding changes.
+- Owner welcome: when admin marks a container provisioned, the Controlcenter
+  POSTs to `{container-url}/api/auth/send-verification-email` on the NEW
+  container (public better-auth endpoint) so the owner verifies on the real
+  app domain — see `notifyContainerLive` in `lib/provisioning.ts`.
+- Emails (`lib/provisioning.ts`): payment-received mail to the customer on
+  checkout completion (~24h manual setup expectation), provisioning checklist
+  to `ADMIN_NOTIFY_EMAIL`, "container is live" mail when marked provisioned.
 - See `lib/provisioning.ts`.
+
+## Pages
+
+- `/profile` — customer self-service: name, email (changeEmail verification),
+  password change, appearance (next-themes), subscriptions + receipts
+  (invoices link to Stripe `hostedInvoiceUrl`, billing portal per container).
 
 ## Commands
 
@@ -65,6 +78,7 @@ npm run build          # Production build
 npm run db:generate    # Generate Prisma client
 npm run db:migrate     # Apply migrations (production)
 npm run db:seed        # Create the admin account (SEED_ADMIN_* env)
+npm run stripe:replay -- <containerId>  # Replay checkout.session.completed locally (no Stripe CLI needed)
 ```
 
 ## Environment

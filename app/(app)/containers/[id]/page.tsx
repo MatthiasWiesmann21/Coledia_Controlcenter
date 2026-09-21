@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireVerifiedUser } from "@/lib/session";
-import { Badge, statusBadgeVariant } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -14,12 +14,9 @@ import {
 } from "@/components/ui/card";
 import {
   CONTAINER_STATUS,
-  CONTAINER_STATUS_LABELS,
-  CONTAINER_TYPE_LABELS,
   PLAN_DETAILS,
   appUrlForSubdomain,
   type ContainerStatus,
-  type ContainerType,
   type Plan,
 } from "@/lib/constants";
 import {
@@ -66,9 +63,7 @@ export default async function ContainerDetailPage({
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight">{container.name}</h1>
-            <Badge variant={statusBadgeVariant(status)}>
-              {CONTAINER_STATUS_LABELS[status] ?? status}
-            </Badge>
+            <StatusBadge status={status} />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {status === CONTAINER_STATUS.ACTIVE ? (
@@ -142,10 +137,6 @@ export default async function ContainerDetailPage({
             <dl className="flex flex-col gap-3 text-sm">
               <Row label="Plan" value={PLAN_DETAILS[plan]?.name ?? container.plan} />
               <Row
-                label="Type"
-                value={CONTAINER_TYPE_LABELS[container.type as ContainerType] ?? container.type}
-              />
-              <Row
                 label="Theme"
                 value={`${container.themePreset} (${container.themeMode ?? "system"})`}
               />
@@ -204,7 +195,6 @@ export default async function ContainerDetailPage({
                 id: container.id,
                 name: container.name,
                 description: container.description,
-                type: container.type,
                 themePreset: container.themePreset,
                 themeMode: container.themeMode,
               }}

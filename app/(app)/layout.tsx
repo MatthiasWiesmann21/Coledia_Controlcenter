@@ -21,6 +21,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               >
                 Containers
               </Link>
+              <Link
+                href="/profile"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Profile
+              </Link>
               {isAdmin && (
                 <Link href="/admin" className="text-muted-foreground hover:text-foreground">
                   Admin

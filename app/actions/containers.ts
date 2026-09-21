@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { hashPassword } from "better-auth/crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireVerifiedUser } from "@/lib/session";
@@ -55,12 +56,25 @@ export async function startContainerCheckout(input: OnboardingInput): Promise<Ch
   });
   if (taken) return { error: "This subdomain is already taken" };
 
+  // Owner: either the Controlcenter account itself or a custom account.
+  // For custom owners only the better-auth password hash is stored —
+  // plaintext never touches the DB or the wire.
+  const customOwner = data.ownerMode === "custom";
+  const ownerPasswordHash = customOwner && data.ownerPassword
+    ? await hashPassword(data.ownerPassword)
+    : null;
+
   const container = await prisma.container.create({
     data: {
       userId: session.user.id,
       name: data.name,
       description: data.description || null,
-      type: data.type,
+      type: data.plan,
+      ownerMode: data.ownerMode,
+      ownerEmail: customOwner ? data.ownerEmail! : session.user.email,
+      ownerName: customOwner ? null : session.user.name,
+      ownerUsername: customOwner ? data.ownerUsername! : null,
+      ownerPasswordHash,
       subdomain: data.subdomain,
       themePreset: data.themePreset,
       themeMode: data.themeMode,

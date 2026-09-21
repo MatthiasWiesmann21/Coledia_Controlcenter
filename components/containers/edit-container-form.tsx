@@ -10,19 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label, FieldError } from "@/components/ui/label";
 import { updateContainer } from "@/app/actions/containers";
-import { CONTAINER_TYPE_LABELS, CONTAINER_TYPES, THEME_MODES, THEME_PRESETS } from "@/lib/constants";
+import { THEME_MODES, THEME_PRESETS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const editSchema = z.object({
   name: z.string().min(2, "At least 2 characters").max(80),
   description: z.string().max(500).optional().or(z.literal("")),
-  type: z.enum([
-    CONTAINER_TYPES.CLUB,
-    CONTAINER_TYPES.ASSOCIATION,
-    CONTAINER_TYPES.TEAM,
-    CONTAINER_TYPES.COMPANY,
-    CONTAINER_TYPES.OTHER,
-  ]),
   themePreset: z.string(),
   themeMode: z.enum(THEME_MODES),
 });
@@ -35,7 +28,6 @@ export interface ContainerEditDefaults {
   id: string;
   name: string;
   description: string | null;
-  type: string;
   themePreset: string;
   themeMode: string | null;
 }
@@ -55,7 +47,6 @@ export function EditContainerForm({ container }: { container: ContainerEditDefau
     defaultValues: {
       name: container.name,
       description: container.description ?? "",
-      type: container.type as EditValues["type"],
       themePreset: container.themePreset,
       themeMode: (container.themeMode as EditValues["themeMode"]) ?? "system",
     },
@@ -88,17 +79,6 @@ export function EditContainerForm({ container }: { container: ContainerEditDefau
         <FieldError message={errors.description?.message} />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="edit-type">Type</Label>
-          <select id="edit-type" className={selectClass} {...register("type")}>
-            {Object.values(CONTAINER_TYPES).map((t) => (
-              <option key={t} value={t}>
-                {CONTAINER_TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-          <FieldError message={errors.type?.message} />
-        </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="edit-themeMode">Default mode</Label>
           <select id="edit-themeMode" className={selectClass} {...register("themeMode")}>

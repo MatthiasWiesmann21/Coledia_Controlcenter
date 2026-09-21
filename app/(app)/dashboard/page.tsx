@@ -3,7 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireVerifiedUser } from "@/lib/session";
 import { buttonVariants } from "@/components/ui/button";
-import { Badge, statusBadgeVariant } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -12,11 +12,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  CONTAINER_STATUS_LABELS,
   PLAN_DETAILS,
   appUrlForSubdomain,
 } from "@/lib/constants";
-import type { Plan, ContainerStatus } from "@/lib/constants";
+import type { Plan } from "@/lib/constants";
 import { Plus } from "lucide-react";
 
 export const metadata: Metadata = { title: "Containers" };
@@ -74,9 +73,7 @@ export default async function DashboardPage() {
                         : `${c.subdomain} · ${PLAN_DETAILS[c.plan as Plan]?.name ?? c.plan}`}
                     </CardDescription>
                   </div>
-                  <Badge variant={statusBadgeVariant(c.status)}>
-                    {CONTAINER_STATUS_LABELS[c.status as ContainerStatus] ?? c.status}
-                  </Badge>
+                  <StatusBadge status={c.status} />
                 </CardHeader>
                 {c.description && (
                   <CardContent>

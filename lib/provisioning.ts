@@ -89,8 +89,10 @@ export async function seedTenantInApp(containerId: string): Promise<{ ok: boolea
     plan: container.plan,
     themePreset: container.themePreset,
     themeMode: container.themeMode,
-    ownerEmail: container.user.email,
-    ownerName: container.user.name,
+    ownerEmail: container.ownerEmail ?? container.user.email,
+    ownerName: container.ownerName ?? container.user.name,
+    ownerUsername: container.ownerUsername ?? undefined,
+    ownerPasswordHash: container.ownerPasswordHash ?? undefined,
   });
 
   if (!result.ok) {
@@ -104,6 +106,8 @@ export async function seedTenantInApp(containerId: string): Promise<{ ok: boolea
       message: `Seeding failed: ${result.error}`,
       metadata: { status: result.status },
     });
+    // Still notify the operator — a payment arrived and needs manual handling.
+    await notifyAdminProvisioningRequired(containerId, { seeded: false });
     return { ok: false, error: result.error };
   }
 
@@ -117,7 +121,7 @@ export async function seedTenantInApp(containerId: string): Promise<{ ok: boolea
     type: "seeded",
     message: `Tenant seeded in app DB (${tenantId})`,
   });
-  await notifyAdminProvisioningRequired(containerId);
+  await notifyAdminProvisioningRequired(containerId, { seeded: true });
   return { ok: true };
 }
 
@@ -163,8 +167,15 @@ export async function syncContainerToApp(
   return { ok: true };
 }
 
-/** Email the operator the manual Dokploy provisioning checklist. */
-export async function notifyAdminProvisioningRequired(containerId: string): Promise<void> {
+/**
+ * Email the operator the manual Dokploy provisioning checklist with the full
+ * onboarding form data. `seeded` reflects whether the app-side tenant was
+ * created successfully — if not, the mail asks for a reseed via the admin UI.
+ */
+export async function notifyAdminProvisioningRequired(
+  containerId: string,
+  opts: { seeded?: boolean } = {},
+): Promise<void> {
   const container = await prisma.container.findUnique({
     where: { id: containerId },
     include: { user: true },
@@ -175,8 +186,31 @@ export async function notifyAdminProvisioningRequired(containerId: string): Prom
   if (!to) return;
 
   const appUrl = appUrlForSubdomain(container.subdomain);
+  const ownerLine =
+    container.ownerMode === "custom"
+      ? `${container.ownerUsername ?? ""} <${container.ownerEmail ?? ""}> (password set by customer)`
+      : `Same as customer <${container.ownerEmail ?? container.user.email}> (sets password via app verification)`;
+  const seedWarning =
+    opts.seeded === false
+      ? "⚠️ APP SEEDING FAILED — open the admin area and use Reseed before provisioning.\n\n"
+      : "";
+  const seedWarningHtml =
+    opts.seeded === false
+      ? `<p style="color:#b45309"><strong>⚠️ App seeding failed.</strong> Open the admin area and use <em>Reseed</em> before provisioning the container.</p>`
+      : "";
+
   const text = [
-    `New container ready for provisioning: ${container.name}`,
+    `New paid container: ${container.name}`,
+    "",
+    seedWarning,
+    "Wizard data:",
+    `  Name:        ${container.name}`,
+    `  Description: ${container.description ?? "—"}`,
+    `  Plan:        ${container.plan}`,
+    `  Address:     ${appUrl}`,
+    `  Theme:       ${container.themePreset} (${container.themeMode ?? "system"})`,
+    `  App owner:   ${ownerLine}`,
+    `  Customer:    ${container.user.name ?? ""} <${container.user.email}>`,
     "",
     "Dokploy steps:",
     `1. Create a new application from repo coledia_app_1.0`,
@@ -184,8 +218,6 @@ export async function notifyAdminProvisioningRequired(containerId: string): Prom
     `3. Map domain: ${container.subdomain}.${process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.app"} → the container port`,
     `4. Deploy, then mark the container as provisioned in the Controlcenter admin area`,
     "",
-    `Customer: ${container.user.name ?? ""} <${container.user.email}>`,
-    `Plan: ${container.plan}`,
     `Container ID: ${container.id}`,
   ].join("\n");
 
@@ -193,8 +225,18 @@ export async function notifyAdminProvisioningRequired(containerId: string): Prom
     to,
     subject: `[Controlcenter] Provision container: ${container.name} (${container.subdomain})`,
     html: `
-<h2>New container ready for provisioning</h2>
-<p><strong>${container.name}</strong> (${container.plan}) by ${container.user.name ?? ""} &lt;${container.user.email}&gt;</p>
+<h2>New paid container — ready for provisioning</h2>
+${seedWarningHtml}
+<h3>Wizard data</h3>
+<table>
+  <tr><td><strong>Name</strong></td><td>${container.name}</td></tr>
+  <tr><td><strong>Description</strong></td><td>${container.description ?? "—"}</td></tr>
+  <tr><td><strong>Plan</strong></td><td>${container.plan}</td></tr>
+  <tr><td><strong>Address</strong></td><td><code>${appUrl}</code></td></tr>
+  <tr><td><strong>Theme</strong></td><td>${container.themePreset} (${container.themeMode ?? "system"})</td></tr>
+  <tr><td><strong>App owner</strong></td><td>${ownerLine}</td></tr>
+  <tr><td><strong>Customer</strong></td><td>${container.user.name ?? ""} &lt;${container.user.email}&gt;</td></tr>
+</table>
 <h3>Dokploy checklist</h3>
 <ol>
   <li>Create a new application from repo <code>coledia_app_1.0</code></li>
@@ -210,5 +252,115 @@ export async function notifyAdminProvisioningRequired(containerId: string): Prom
     containerId,
     type: "provisioning_requested",
     message: `Provisioning checklist emailed to ${to}`,
+  });
+}
+
+/**
+ * Customer email after a successful payment: confirms the payment and sets
+ * the expectation that the container is provisioned manually (up to ~24h)
+ * and that a second email follows once it's live.
+ */
+export async function notifyCustomerPaymentReceived(containerId: string): Promise<void> {
+  const container = await prisma.container.findUnique({
+    where: { id: containerId },
+    include: { user: true },
+  });
+  if (!container) return;
+
+  const appUrl = appUrlForSubdomain(container.subdomain);
+  await sendEmail({
+    to: container.user.email,
+    subject: `Payment received — ${container.name} is being set up`,
+    html: `
+<h2>Payment received — we're setting up your container</h2>
+<p>Hi ${container.user.name ?? "there"},</p>
+<p>Thanks! Your payment for <strong>${container.name}</strong> (${container.plan})
+went through and your container is now queued for setup.</p>
+<p>We provision each container manually — this usually takes <strong>up to 24
+hours</strong>. You'll get another email as soon as
+<strong>${appUrl}</strong> is live.</p>
+<p>— The Coledia team</p>`,
+    text: [
+      `Payment received — we're setting up your container`,
+      ``,
+      `Hi ${container.user.name ?? "there"},`,
+      ``,
+      `Thanks! Your payment for ${container.name} (${container.plan}) went through`,
+      `and your container is now queued for setup.`,
+      ``,
+      `We provision each container manually — this usually takes up to 24 hours.`,
+      `You'll get another email as soon as ${appUrl} is live.`,
+      ``,
+      `— The Coledia team`,
+    ].join("\n"),
+  });
+}
+
+/**
+ * Container is live: email the customer and ask the (now reachable) app
+ * container to send its own verification email to the owner — the owner
+ * verifies their email on the real app before signing in.
+ *
+ * The verification request hits the NEW container's public better-auth
+ * endpoint (/api/auth/send-verification-email), so the generated link
+ * already points at the right subdomain.
+ */
+export async function notifyContainerLive(containerId: string): Promise<void> {
+  const container = await prisma.container.findUnique({
+    where: { id: containerId },
+    include: { user: true },
+  });
+  if (!container) return;
+
+  const appUrl = appUrlForSubdomain(container.subdomain);
+  const ownerEmail = container.ownerEmail ?? container.user.email;
+
+  // Ask the new container to send its own verification email to the owner.
+  try {
+    const res = await fetch(`${appUrl}/api/auth/send-verification-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: ownerEmail, callbackURL: "/" }),
+    });
+    await logContainerEvent({
+      containerId,
+      type: res.ok ? "owner_verification_sent" : "owner_verification_failed",
+      message: res.ok
+        ? `Verification email triggered on app for ${ownerEmail}`
+        : `Verification email request failed (HTTP ${res.status})`,
+    });
+  } catch (err) {
+    await logContainerEvent({
+      containerId,
+      type: "owner_verification_failed",
+      message: `Could not reach app for verification email: ${String(err)}`,
+    });
+  }
+
+  await sendEmail({
+    to: container.user.email,
+    subject: `${container.name} is live`,
+    html: `
+<h2>Your container is live</h2>
+<p>Hi ${container.user.name ?? "there"},</p>
+<p>Good news — <strong>${container.name}</strong> is now live at
+<a href="${appUrl}">${appUrl}</a>.</p>
+<p>We've sent a verification email to the app owner
+(<strong>${ownerEmail}</strong>). Click the link in that email to verify the
+account and sign in for the first time.</p>
+<p>— The Coledia team</p>`,
+    text: [
+      `Your container is live`,
+      ``,
+      `Hi ${container.user.name ?? "there"},`,
+      ``,
+      `Good news — ${container.name} is now live at ${appUrl}.`,
+      ``,
+      `We've sent a verification email to the app owner (${ownerEmail}).`,
+      `Click the link in that email to verify the account and sign in for the`,
+      `first time.`,
+      ``,
+      `— The Coledia team`,
+    ].join("\n"),
   });
 }

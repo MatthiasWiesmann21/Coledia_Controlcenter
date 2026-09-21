@@ -14,8 +14,6 @@ import {
 } from "lucide-react";
 import { onboardingSchema, type OnboardingInput } from "@/lib/schemas";
 import {
-  CONTAINER_TYPE_LABELS,
-  CONTAINER_TYPES,
   PLAN_DETAILS,
   PLAN_ORDER,
   THEME_MODES,
@@ -27,7 +25,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Label, FieldError } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
-const STEPS = ["Basics", "Appearance", "Subdomain", "Plan", "Review"] as const;
+const STEPS = ["Basics", "Owner", "Appearance", "Subdomain", "Plan", "Review"] as const;
 
 type SubdomainCheck =
   | { state: "idle" }
@@ -57,7 +55,11 @@ export function OnboardingWizard() {
     defaultValues: {
       name: "",
       description: "",
-      type: CONTAINER_TYPES.CLUB,
+      ownerMode: "same",
+      ownerUsername: "",
+      ownerEmail: "",
+      ownerPassword: "",
+      ownerPasswordConfirm: "",
       subdomain: "",
       themePreset: "coledia",
       themeMode: "system",
@@ -68,6 +70,7 @@ export function OnboardingWizard() {
 
   const values = watch();
   const subdomain = watch("subdomain");
+  const ownerMode = watch("ownerMode");
 
   // Debounced live availability check for the subdomain step.
   useEffect(() => {
@@ -95,7 +98,8 @@ export function OnboardingWizard() {
 
   const stepFields = useMemo<(keyof OnboardingInput)[][]>(
     () => [
-      ["name", "description", "type"],
+      ["name", "description"],
+      ["ownerMode", "ownerUsername", "ownerEmail", "ownerPassword", "ownerPasswordConfirm"],
       ["themePreset", "themeMode"],
       ["subdomain"],
       ["plan"],
@@ -184,25 +188,118 @@ export function OnboardingWizard() {
               />
               <FieldError message={errors.description?.message} />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="type">Type of container</Label>
-              <select id="type" className={selectClass} {...register("type")}>
-                {Object.values(CONTAINER_TYPES).map((t) => (
-                  <option key={t} value={t}>
-                    {CONTAINER_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Informational only — helps us understand how Coledia is used.
-              </p>
-              <FieldError message={errors.type?.message} />
-            </div>
           </div>
         )}
 
-        {/* ── Step 2: Appearance ─────────────────────────────── */}
+        {/* ── Step 2: Owner ──────────────────────────────────── */}
         {step === 1 && (
+          <div className="flex flex-col gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Who owns the app?</h2>
+              <p className="text-sm text-muted-foreground">
+                This person becomes the owner account inside your Coledia app.
+                They&apos;ll verify their email on the app when it goes live.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <label
+                className={cn(
+                  "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted",
+                  ownerMode === "same" && "border-primary ring-2 ring-ring",
+                )}
+              >
+                <input
+                  type="radio"
+                  value="same"
+                  className="mt-1"
+                  {...register("ownerMode")}
+                />
+                <span>
+                  <span className="block text-sm font-medium">
+                    Use my Controlcenter account
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Your name and email will be used. You set the app password on
+                    first login via a verification email.
+                  </span>
+                </span>
+              </label>
+              <label
+                className={cn(
+                  "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted",
+                  ownerMode === "custom" && "border-primary ring-2 ring-ring",
+                )}
+              >
+                <input
+                  type="radio"
+                  value="custom"
+                  className="mt-1"
+                  {...register("ownerMode")}
+                />
+                <span>
+                  <span className="block text-sm font-medium">
+                    A different owner
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Create the owner account for someone else — they verify their
+                    email on the app and can change the password afterwards.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {ownerMode === "custom" && (
+              <div className="flex flex-col gap-4 rounded-xl border bg-muted/40 p-4">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ownerUsername">Username</Label>
+                  <Input
+                    id="ownerUsername"
+                    placeholder="club-admin"
+                    autoComplete="off"
+                    {...register("ownerUsername")}
+                  />
+                  <FieldError message={errors.ownerUsername?.message} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ownerEmail">Owner email</Label>
+                  <Input
+                    id="ownerEmail"
+                    type="email"
+                    placeholder="owner@example.com"
+                    autoComplete="off"
+                    {...register("ownerEmail")}
+                  />
+                  <FieldError message={errors.ownerEmail?.message} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="ownerPassword">Password</Label>
+                    <Input
+                      id="ownerPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      {...register("ownerPassword")}
+                    />
+                    <FieldError message={errors.ownerPassword?.message} />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="ownerPasswordConfirm">Confirm password</Label>
+                    <Input
+                      id="ownerPasswordConfirm"
+                      type="password"
+                      autoComplete="new-password"
+                      {...register("ownerPasswordConfirm")}
+                    />
+                    <FieldError message={errors.ownerPasswordConfirm?.message} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Step 3: Appearance ─────────────────────────────── */}
+        {step === 2 && (
           <div className="flex flex-col gap-4">
             <div>
               <h2 className="text-lg font-semibold">Choose your look</h2>
@@ -250,8 +347,8 @@ export function OnboardingWizard() {
           </div>
         )}
 
-        {/* ── Step 3: Subdomain ──────────────────────────────── */}
-        {step === 2 && (
+        {/* ── Step 4: Subdomain ──────────────────────────────── */}
+        {step === 3 && (
           <div className="flex flex-col gap-4">
             <div>
               <h2 className="text-lg font-semibold">Claim your address</h2>
@@ -297,8 +394,8 @@ export function OnboardingWizard() {
           </div>
         )}
 
-        {/* ── Step 4: Plan ───────────────────────────────────── */}
-        {step === 3 && (
+        {/* ── Step 5: Plan ───────────────────────────────────── */}
+        {step === 4 && (
           <div className="flex flex-col gap-4">
             <div>
               <h2 className="text-lg font-semibold">Pick your plan</h2>
@@ -341,8 +438,8 @@ export function OnboardingWizard() {
           </div>
         )}
 
-        {/* ── Step 5: Review ─────────────────────────────────── */}
-        {step === 4 && (
+        {/* ── Step 6: Review ─────────────────────────────────── */}
+        {step === 5 && (
           <div className="flex flex-col gap-4">
             <div>
               <h2 className="text-lg font-semibold">Review &amp; create</h2>
@@ -354,7 +451,14 @@ export function OnboardingWizard() {
             <dl className="divide-y rounded-xl border">
               <ReviewRow label="Name" value={values.name} />
               <ReviewRow label="Description" value={values.description || "—"} />
-              <ReviewRow label="Type" value={CONTAINER_TYPE_LABELS[values.type]} />
+              <ReviewRow
+                label="App owner"
+                value={
+                  values.ownerMode === "custom"
+                    ? `${values.ownerUsername} <${values.ownerEmail}>`
+                    : "Your Controlcenter account"
+                }
+              />
               <ReviewRow
                 label="Address"
                 value={`${values.subdomain}.${process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.app"}`}

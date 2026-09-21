@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
-import { Badge, statusBadgeVariant } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -10,10 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  CONTAINER_STATUS_LABELS,
-  type ContainerStatus,
-} from "@/lib/constants";
 
 export const metadata: Metadata = { title: "Admin" };
 
@@ -88,9 +84,7 @@ export default async function AdminPage() {
                   <td className="px-6 py-3 text-muted-foreground">{c.user.email}</td>
                   <td className="px-6 py-3">{c.plan}</td>
                   <td className="px-6 py-3">
-                    <Badge variant={statusBadgeVariant(c.status)}>
-                      {CONTAINER_STATUS_LABELS[c.status as ContainerStatus] ?? c.status}
-                    </Badge>
+                    <StatusBadge status={c.status} />
                   </td>
                   <td className="px-6 py-3 font-mono text-xs">{c.subdomain}</td>
                   <td className="px-6 py-3 text-muted-foreground">

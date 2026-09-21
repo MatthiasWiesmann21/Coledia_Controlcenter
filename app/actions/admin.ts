@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
-import { syncContainerToApp, seedTenantInApp } from "@/lib/provisioning";
+import {
+  notifyContainerLive,
+  syncContainerToApp,
+  seedTenantInApp,
+} from "@/lib/provisioning";
 import { logContainerEvent } from "@/lib/events";
 import { CONTAINER_STATUS } from "@/lib/constants";
 
@@ -80,6 +84,9 @@ export async function adminMarkProvisioned(containerId: string, notes?: string) 
     type: "provisioned",
     message: "Marked provisioned by admin" + (notes ? `: ${notes}` : ""),
   });
+  // Container is deployed now — tell the customer and trigger the owner's
+  // verification email on the app itself (non-fatal on failure).
+  await notifyContainerLive(containerId);
   revalidatePath("/admin");
   revalidatePath(`/admin/containers/${containerId}`);
   return { ok: true };

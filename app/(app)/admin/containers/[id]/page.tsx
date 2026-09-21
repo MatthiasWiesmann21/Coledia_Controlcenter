@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
-import { Badge, statusBadgeVariant } from "@/components/ui/badge";
+import { Badge, StatusBadge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -11,11 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  CONTAINER_STATUS,
-  CONTAINER_STATUS_LABELS,
-  type ContainerStatus,
-} from "@/lib/constants";
+import { CONTAINER_STATUS } from "@/lib/constants";
 import { AdminContainerActions } from "@/components/admin/admin-actions";
 
 export const metadata: Metadata = { title: "Container (Admin)" };
@@ -45,9 +41,7 @@ export default async function AdminContainerPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
         <h1 className="text-2xl font-bold tracking-tight">{container.name}</h1>
-        <Badge variant={statusBadgeVariant(container.status)}>
-          {CONTAINER_STATUS_LABELS[container.status as ContainerStatus] ?? container.status}
-        </Badge>
+        <StatusBadge status={container.status} />
       </div>
 
       {/* Provisioning card */}
@@ -95,7 +89,6 @@ export default async function AdminContainerPage({
               <Row label="Tenant ID (App)" value={container.appTenantId} mono />
               <Row label="Subdomain" value={container.subdomain} mono />
               <Row label="Plan" value={container.plan} />
-              <Row label="Type" value={container.type} />
               <Row label="Theme" value={`${container.themePreset} (${container.themeMode ?? "system"})`} />
               <Row label="Created" value={container.createdAt.toLocaleString("en-CH")} />
               {container.provisionNotes && <Row label="Provision notes" value={container.provisionNotes} />}

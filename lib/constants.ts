@@ -65,24 +65,20 @@ export const PLAN_DETAILS: Record<Plan, {
   },
 };
 
-// ─── Container types (marketing info only — not used by the app) ──
+// ─── Container types ─────────────────────────────────────────────
+// A container's "type" IS its plan tier (starter | club | organization) —
+// the same value is sent to the app DB (Tenant.plan) and billed via Stripe.
 export const CONTAINER_TYPES = {
+  STARTER: "starter",
   CLUB: "club",
-  ASSOCIATION: "association",
-  TEAM: "team",
-  COMPANY: "company",
-  OTHER: "other",
+  ORGANIZATION: "organization",
 } as const;
 
 export type ContainerType = (typeof CONTAINER_TYPES)[keyof typeof CONTAINER_TYPES];
 
-export const CONTAINER_TYPE_LABELS: Record<ContainerType, string> = {
-  club: "Club",
-  association: "Association",
-  team: "Team",
-  company: "Company",
-  other: "Other",
-};
+// ─── Container owner mode ─────────────────────────────────────────
+export const OWNER_MODES = { SAME: "same", CUSTOM: "custom" } as const;
+export type OwnerMode = (typeof OWNER_MODES)[keyof typeof OWNER_MODES];
 
 // ─── Theme presets (must match the app's Branding.themePreset) ────
 export const THEME_PRESETS = [
@@ -114,9 +110,9 @@ export type ContainerStatus = (typeof CONTAINER_STATUS)[keyof typeof CONTAINER_S
 
 export const CONTAINER_STATUS_LABELS: Record<ContainerStatus, string> = {
   draft: "Draft",
-  pending_payment: "Awaiting payment",
-  seeding: "Seeding",
-  pending_provisioning: "Provisioning",
+  pending_payment: "Pending",
+  seeding: "Setting up",
+  pending_provisioning: "Pending setup",
   active: "Active",
   suspended: "Suspended",
   cancelled: "Cancelled",

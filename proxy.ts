@@ -9,7 +9,13 @@ import { getSessionCookie } from "better-auth/cookies";
  * real authz is enforced server-side in layouts/actions via `requireUser` /
  * `requireAdmin` (the cookie alone can be stale).
  */
-const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/containers", "/admin"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/onboarding",
+  "/containers",
+  "/admin",
+  "/profile",
+];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

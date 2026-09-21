@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { getStripe } from "@/lib/stripe";
-import { seedTenantInApp, syncContainerToApp } from "@/lib/provisioning";
+import {
+  notifyCustomerPaymentReceived,
+  seedTenantInApp,
+  syncContainerToApp,
+} from "@/lib/provisioning";
 import { logContainerEvent } from "@/lib/events";
 import { CONTAINER_STATUS, PLANS } from "@/lib/constants";
 
@@ -142,6 +146,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     where: { id: containerId },
     data: { status: CONTAINER_STATUS.SEEDING },
   });
+
+  // Tell the customer: payment went through, container will be set up
+  // manually (up to ~24h) and a second email follows once it's live.
+  await notifyCustomerPaymentReceived(containerId);
 
   const result = await seedTenantInApp(containerId);
   if (!result.ok) {
