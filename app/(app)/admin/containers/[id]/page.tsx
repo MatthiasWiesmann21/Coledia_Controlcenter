@@ -14,6 +14,7 @@ import {
 import { CONTAINER_STATUS } from "@/lib/constants";
 import { containerEnvLines } from "@/lib/provisioning";
 import { AdminContainerActions } from "@/components/admin/admin-actions";
+import { HealthCheckPanel } from "@/components/admin/health-check";
 
 export const metadata: Metadata = { title: "Container (Admin)" };
 
@@ -140,6 +141,21 @@ export default async function AdminContainerPage({
           </CardHeader>
           <CardContent>
             <AdminContainerActions containerId={container.id} status={container.status} />
+          </CardContent>
+        </Card>
+
+        {/* Health check */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Health check</CardTitle>
+            <CardDescription>
+              Verifies the tenant + theme in the app DB and probes the public
+              URL. Runs automatically via /api/cron/container-health; a live,
+              verified container is marked provisioned automatically.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <HealthCheckPanel containerId={container.id} />
           </CardContent>
         </Card>
 

@@ -48,6 +48,7 @@ Change `SEED_ADMIN_PASSWORD` to a strong value **before** seeding in production.
 | `APP_INTERNAL_API_SECRET` | must match `INTERNAL_API_SECRET` on app.coledia.com |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` | your admin login |
 | `ADMIN_NOTIFY_EMAIL` | where provisioning checklists go (`m.wiesmann@wiesmann-se.ch`) |
+| `CRON_SECRET` | long random string — Bearer token for the health-check cron |
 
 ### 4. Stripe (live mode)
 
@@ -80,6 +81,26 @@ Local testing without the Stripe CLI:
 - Per customer container: A record `{subdomain}.coledia.com` → app server IP
   (no wildcard). The provisioning email/checklist reminds you of every step,
   including the full per-container env block.
+
+### 7. Health-check cron (auto-provisioning)
+
+`GET/POST /api/cron/container-health` checks every container in
+`seeding`/`pending_provisioning`: verifies the tenant + theme in the app DB
+(internal API `GET /api/internal/tenants/{id}`), probes
+`https://{subdomain}.coledia.com/api/auth/session`, and once the URL is
+verified as the coledia app marks the container `active` and sends the
+"container is live" emails. Missing tenants are reseeded automatically.
+
+Schedule it every ~5 minutes — a Dokploy scheduled task or an external cron
+(e.g. cron-job.org):
+
+```bash
+curl -fsS -H "Authorization: Bearer $CRON_SECRET" \
+  https://<controlcenter-domain>/api/cron/container-health
+```
+
+Admins can also run the same check on demand from the container's admin page
+("Run health check").
 
 ## Development
 

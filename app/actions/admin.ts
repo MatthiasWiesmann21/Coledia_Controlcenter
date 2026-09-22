@@ -8,6 +8,8 @@ import {
   notifyContainerLive,
   syncContainerToApp,
   seedTenantInApp,
+  checkContainerHealth,
+  type ContainerHealthReport,
 } from "@/lib/provisioning";
 import { logContainerEvent } from "@/lib/events";
 import { CONTAINER_STATUS } from "@/lib/constants";
@@ -108,6 +110,27 @@ export async function adminReseedContainer(containerId: string) {
   revalidatePath("/admin");
   revalidatePath(`/admin/containers/${containerId}`);
   return result;
+}
+
+/** Admin: run the health check now (same probe the cron endpoint runs). */
+export async function adminCheckContainerHealth(
+  containerId: string,
+): Promise<{ ok?: boolean; error?: string; report?: ContainerHealthReport }> {
+  await requireAdmin();
+  const container = await prisma.container.findUnique({
+    where: { id: containerId },
+    select: { id: true },
+  });
+  if (!container) return { error: "Container not found" };
+
+  try {
+    const report = await checkContainerHealth(containerId);
+    revalidatePath("/admin");
+    revalidatePath(`/admin/containers/${containerId}`);
+    return { ok: true, report };
+  } catch (err) {
+    return { error: String(err) };
+  }
 }
 
 const notesSchema = z.string().max(2000).optional();

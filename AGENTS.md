@@ -59,6 +59,14 @@ subscription ⇒ container suspended (no free fallback).
 - Emails (`lib/provisioning.ts`): payment-received mail to the customer on
   checkout completion (~24h manual setup expectation), provisioning checklist
   to `ADMIN_NOTIFY_EMAIL`, "container is live" mail when marked provisioned.
+  All sends are non-fatal (`safeSendEmail` logs `email_failed` events instead
+  of aborting the flow).
+- Health check: `checkContainerHealth` reads back the tenant via GET
+  `/api/internal/tenants/{appTenantId}` (theme/plan/subdomain comparison),
+  probes `{subdomain}.{base}/api/auth/session`, auto-reseeds missing tenants,
+  and auto-marks a verified-live container `active` (+ live emails). Runs on
+  demand in the admin UI and on a schedule via `/api/cron/container-health`
+  (Bearer `CRON_SECRET`).
 - See `lib/provisioning.ts`.
 
 ## Pages

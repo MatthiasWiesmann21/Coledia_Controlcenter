@@ -25,10 +25,30 @@ interface InternalApiResult {
   error?: string;
 }
 
+/**
+ * sendEmail variant that never throws: SMTP failures are logged as a
+ * container event instead of aborting provisioning flows.
+ */
+async function safeSendEmail(
+  containerId: string,
+  message: Parameters<typeof sendEmail>[0],
+): Promise<void> {
+  try {
+    await sendEmail(message);
+  } catch (err) {
+    console.error(`[provisioning] email failed for container ${containerId}:`, err);
+    await logContainerEvent({
+      containerId,
+      type: "email_failed",
+      message: `Email failed ("${message.subject}"): ${String(err)}`,
+    }).catch(() => {});
+  }
+}
+
 async function callAppApi(
-  method: "POST" | "PATCH",
+  method: "GET" | "POST" | "PATCH",
   path: string,
-  body: Record<string, unknown>,
+  body?: Record<string, unknown>,
 ): Promise<InternalApiResult> {
   const baseUrl = process.env.APP_INTERNAL_API_URL;
   const secret = process.env.APP_INTERNAL_API_SECRET;
@@ -47,7 +67,7 @@ async function callAppApi(
         Authorization: `Bearer ${secret}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     const data = (await res.json().catch(() => undefined)) as
       | Record<string, unknown>
@@ -253,7 +273,7 @@ export async function notifyAdminProvisioningRequired(
     `Container ID: ${container.id}`,
   ].join("\n");
 
-  await sendEmail({
+  await safeSendEmail(containerId, {
     to,
     subject: `[Controlcenter] Provision container: ${container.name} (${container.subdomain})`,
     html: `
@@ -301,7 +321,7 @@ export async function notifyCustomerPaymentReceived(containerId: string): Promis
   if (!container) return;
 
   const appUrl = appUrlForSubdomain(container.subdomain);
-  await sendEmail({
+  await safeSendEmail(containerId, {
     to: container.user.email,
     subject: `Payment received — ${container.name} is being set up`,
     html: `
@@ -370,7 +390,7 @@ export async function notifyContainerLive(containerId: string): Promise<void> {
     });
   }
 
-  await sendEmail({
+  await safeSendEmail(containerId, {
     to: container.user.email,
     subject: `${container.name} is live`,
     html: `
@@ -396,4 +416,241 @@ account and sign in for the first time.</p>
       `— The Coledia team`,
     ].join("\n"),
   });
+}
+
+// ─── Health check ────────────────────────────────────────────────
+
+export interface HealthCheckItem {
+  key: string;
+  expected: string | null;
+  actual: string | null;
+  ok: boolean;
+}
+
+export interface ContainerHealthReport {
+  containerId: string;
+  checkedAt: string;
+  /** HTTP response from the container's public URL */
+  reachable: boolean;
+  httpStatus: number | null;
+  /** The URL answered like a coledia app (better-auth endpoint responded) */
+  appVerified: boolean;
+  /** Tenant row exists in the shared app DB with the expected settings */
+  tenantFound: boolean;
+  /** A reseed was attempted during this check (tenant was missing) */
+  reseeded: boolean;
+  checks: HealthCheckItem[];
+  issues: string[];
+  /** Set when this check changed the container status */
+  statusChanged?: string;
+}
+
+/**
+ * Health check for a container: verifies the app-side tenant state (via the
+ * internal API GET) and probes the public URL.
+ *
+ * Self-healing:
+ *  - tenant missing in the app DB (and payment received) → reseed once
+ *  - status stuck in `seeding` but tenant exists → move to pending_provisioning
+ *  - `pending_provisioning` + public URL verified as the coledia app
+ *    → mark provisioned and send the "container is live" notifications
+ */
+export async function checkContainerHealth(
+  containerId: string,
+): Promise<ContainerHealthReport> {
+  const container = await prisma.container.findUnique({
+    where: { id: containerId },
+    include: { user: true },
+  });
+  if (!container) throw new Error("Container not found");
+
+  const report: ContainerHealthReport = {
+    containerId,
+    checkedAt: new Date().toISOString(),
+    reachable: false,
+    httpStatus: null,
+    appVerified: false,
+    tenantFound: false,
+    reseeded: false,
+    checks: [],
+    issues: [],
+  };
+
+  // ── 1. Tenant state in the app DB ──
+  let tenantResult = await fetchAppTenant(container.appTenantId);
+
+  if (
+    tenantResult.state === "notfound" &&
+    container.status !== CONTAINER_STATUS.DRAFT &&
+    container.status !== CONTAINER_STATUS.PENDING_PAYMENT
+  ) {
+    // Paid but never seeded (e.g. earlier failure) — heal it.
+    report.reseeded = true;
+    const seed = await seedTenantInApp(containerId);
+    if (!seed.ok) report.issues.push(`Reseed failed: ${seed.error}`);
+    tenantResult = await fetchAppTenant(container.appTenantId);
+  }
+
+  const tenant = tenantResult.tenant;
+  if (tenantResult.state === "error") {
+    report.issues.push(
+      `App internal API check failed: ${tenantResult.error} ` +
+        "(app not redeployed with GET support, or secret mismatch)",
+    );
+  } else if (!tenant) {
+    report.issues.push("Tenant not found in the app database");
+  } else {
+    report.tenantFound = true;
+    const branding =
+      (tenant.branding as { themePreset?: string; themeMode?: string } | null) ??
+      null;
+    const compare = (
+      key: string,
+      expected: string | null,
+      actual: string | null,
+    ) => {
+      const ok = expected === actual;
+      report.checks.push({ key, expected, actual, ok });
+      if (!ok)
+        report.issues.push(
+          `${key}: expected "${expected}", got "${actual}"`,
+        );
+    };
+    compare("name", container.name, (tenant.name as string) ?? null);
+    compare(
+      "subdomain",
+      container.subdomain,
+      (tenant.subdomain as string) ?? null,
+    );
+    compare("plan", container.plan, (tenant.plan as string) ?? null);
+    compare(
+      "themePreset",
+      container.themePreset,
+      branding?.themePreset ?? null,
+    );
+    compare(
+      "themeMode",
+      container.themeMode ?? "system",
+      branding?.themeMode ?? "system",
+    );
+  }
+
+  // ── 2. Public URL probe ──
+  const appUrl = appUrlForSubdomain(container.subdomain);
+  const probe = await probeUrl(`${appUrl}/api/auth/session`);
+  report.httpStatus = probe.status;
+  report.reachable = probe.ok;
+  report.appVerified = probe.ok && probe.looksLikeApp;
+  if (probe.ok && !probe.looksLikeApp) {
+    report.issues.push(
+      "URL responds but does not look like the coledia app (placeholder page?)",
+    );
+  } else if (!probe.ok) {
+    report.issues.push(
+      probe.error ?? `${appUrl} not reachable (HTTP ${probe.status ?? "—"})`,
+    );
+  }
+
+  // ── 3. Status transitions ──
+  if (container.status === CONTAINER_STATUS.SEEDING && report.tenantFound) {
+    await prisma.container.update({
+      where: { id: containerId },
+      data: { status: CONTAINER_STATUS.PENDING_PROVISIONING },
+    });
+    report.statusChanged = `${CONTAINER_STATUS.SEEDING} → ${CONTAINER_STATUS.PENDING_PROVISIONING}`;
+  }
+
+  if (
+    container.status === CONTAINER_STATUS.PENDING_PROVISIONING &&
+    report.reachable &&
+    report.appVerified &&
+    report.tenantFound
+  ) {
+    await prisma.container.update({
+      where: { id: containerId },
+      data: { status: CONTAINER_STATUS.ACTIVE },
+    });
+    report.statusChanged = `${CONTAINER_STATUS.PENDING_PROVISIONING} → ${CONTAINER_STATUS.ACTIVE}`;
+    await logContainerEvent({
+      containerId,
+      type: "provisioned",
+      message: "Auto-detected live by health check",
+    });
+    // Customer "live" mail + owner verification on the new container.
+    await notifyContainerLive(containerId);
+  }
+
+  await logContainerEvent({
+    containerId,
+    type: "health_check",
+    message: report.issues.length
+      ? `Health check: ${report.issues.length} issue(s)`
+      : "Health check: all good",
+    metadata: {
+      reachable: report.reachable,
+      appVerified: report.appVerified,
+      tenantFound: report.tenantFound,
+      issues: report.issues,
+    },
+  });
+
+  return report;
+}
+
+type AppTenantResult =
+  | { state: "found"; tenant: Record<string, unknown> }
+  | { state: "notfound"; tenant: null }
+  | { state: "error"; tenant: null; error: string };
+
+/** Fetch tenant + branding from the app's internal API (GET). */
+async function fetchAppTenant(appTenantId: string): Promise<AppTenantResult> {
+  const result = await callAppApi("GET", `/api/internal/tenants/${appTenantId}`);
+  if (result.ok) {
+    const tenant = result.data?.tenant as Record<string, unknown> | undefined;
+    return tenant
+      ? { state: "found", tenant }
+      : { state: "error", tenant: null, error: "Empty tenant payload" };
+  }
+  if (result.status === 404) return { state: "notfound", tenant: null };
+  return {
+    state: "error",
+    tenant: null,
+    error: result.error ?? `HTTP ${result.status}`,
+  };
+}
+
+const PROBE_TIMEOUT_MS = 8000;
+
+async function probeUrl(url: string): Promise<{
+  ok: boolean;
+  status: number | null;
+  looksLikeApp: boolean;
+  error?: string;
+}> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: { Accept: "application/json" },
+    });
+    const contentType = res.headers.get("content-type") ?? "";
+    return {
+      ok: res.status < 500,
+      status: res.status,
+      // better-auth's session endpoint always returns JSON — a Dokploy
+      // placeholder / parked page would answer HTML instead.
+      looksLikeApp: contentType.includes("json"),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: null,
+      looksLikeApp: false,
+      error: `Fetch failed: ${String(err)}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
