@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE `container` MODIFY `type` VARCHAR(191) NOT NULL DEFAULT 'starter';
+ALTER TABLE `Container` MODIFY `type` VARCHAR(191) NOT NULL DEFAULT 'starter';

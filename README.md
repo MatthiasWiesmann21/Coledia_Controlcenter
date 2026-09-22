@@ -17,6 +17,9 @@ connection string.
 
 ### 2. Dokploy service
 
+- **Node**: requires Node >= 22 (Next 16 + better-auth deps). `engines` in
+  `package.json` tells Nixpacks; if it still builds on Node 18, set
+  `NIXPACKS_NODE_VERSION=22` as a service env var.
 - **Build**: Nixpacks autodetect works. Build command:
   `npm ci && npx prisma generate && npm run build`
 - **Start**: `npm run start` (runs `prisma migrate deploy` before `next start`)
