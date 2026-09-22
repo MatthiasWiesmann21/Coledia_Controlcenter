@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CONTAINER_STATUS } from "@/lib/constants";
+import { containerEnvLines } from "@/lib/provisioning";
 import { AdminContainerActions } from "@/components/admin/admin-actions";
 
 export const metadata: Metadata = { title: "Container (Admin)" };
@@ -35,7 +36,7 @@ export default async function AdminContainerPage({
   });
   if (!container) notFound();
 
-  const baseDomain = process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.app";
+  const baseDomain = process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.com";
 
   return (
     <div className="flex flex-col gap-6">
@@ -56,13 +57,20 @@ export default async function AdminContainerPage({
           <CardContent>
             <ol className="flex list-decimal flex-col gap-3 pl-5 text-sm">
               <li>
+                DNS: point{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                  {container.subdomain}.{baseDomain}
+                </code>{" "}
+                at the app server (no wildcard — one record per container)
+              </li>
+              <li>
                 Create a new application in Dokploy from repo{" "}
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">coledia_app_1.0</code>
               </li>
               <li>
-                Set the environment variable:
+                Set the container environment:
                 <pre className="mt-1 overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-xs">
-                  TENANT_ID={container.appTenantId}
+                  {containerEnvLines(container).join("\n")}
                 </pre>
               </li>
               <li>
@@ -70,9 +78,9 @@ export default async function AdminContainerPage({
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                   {container.subdomain}.{baseDomain}
                 </code>{" "}
-                to the container port
+                in Dokploy (HTTPS cert) to the container port
               </li>
-              <li>Deploy the container</li>
+              <li>Deploy, then mark the container as provisioned below</li>
             </ol>
           </CardContent>
         </Card>

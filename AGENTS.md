@@ -89,4 +89,19 @@ Better-Auth, SMTP, Stripe (+ 3 price IDs), `NEXT_PUBLIC_APP_BASE_DOMAIN`,
 `SEED_ADMIN_*` and `ADMIN_NOTIFY_EMAIL`.
 
 Local Stripe testing: `stripe listen --forward-to localhost:3000/api/stripe/webhook`
-and set the printed `whsec_...` as `STRIPE_WEBHOOK_SECRET`.
+and set the printed `whsec_...` as `STRIPE_WEBHOOK_SECRET`. Without the Stripe
+CLI use `npm run stripe:replay -- <containerId>` instead.
+
+## Deployment
+
+Full production runbook (Dokploy build/start commands, env table, Stripe live
+setup incl. webhook registration, DNS, one-time app-side steps) lives in
+`README.md`. Key points:
+
+- `npm run start` runs `prisma migrate deploy` before `next start` — Dokploy
+  just needs the env vars set.
+- Customer containers live at `{subdomain}.coledia.com`; there is NO wildcard
+  DNS, so each container needs its own DNS record (listed in the provisioning
+  checklist email + admin card, which also render the full per-container env
+  block via `containerEnvLines` in `lib/provisioning.ts`).
+- The Controlcenter portal is `robots: noindex`.

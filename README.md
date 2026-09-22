@@ -1,36 +1,89 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Coledia Controlcenter
 
-## Getting Started
+Customer-facing management portal for the Coledia platform: customers sign up
+(email-verified), create containers through an onboarding wizard, pay via
+Stripe subscriptions (one subscription = one container), and manage billing —
+while you provision the actual Coledia app containers in Dokploy.
 
-First, run the development server:
+See `AGENTS.md` for architecture, data model, and commands. This README covers
+**deployment**.
+
+## Production deployment (Dokploy)
+
+### 1. Database
+
+Create a MySQL database on Dokploy (e.g. `coledia_controlcenter`) and note the
+connection string.
+
+### 2. Dokploy service
+
+- **Build**: Nixpacks autodetect works. Build command:
+  `npm ci && npx prisma generate && npm run build`
+- **Start**: `npm run start` (runs `prisma migrate deploy` before `next start`)
+- Set all env vars below, deploy, then create the admin account:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run db:seed
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Change `SEED_ADMIN_PASSWORD` to a strong value **before** seeding in production.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Environment variables (production)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | `mysql://user:pass@<dokploy-mysql>:3306/coledia_controlcenter` |
+| `BETTER_AUTH_SECRET` | long random string |
+| `BETTER_AUTH_URL` | `https://<controlcenter-domain>` |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | Resend SMTP (or other provider) |
+| `STRIPE_SECRET_KEY` | live key `sk_live_...` |
+| `STRIPE_WEBHOOK_SECRET` | from the Stripe webhook endpoint (step 4) |
+| `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_CLUB` / `STRIPE_PRICE_ORGANIZATION` | live price IDs (step 4) |
+| `NEXT_PUBLIC_APP_URL` | `https://<controlcenter-domain>` |
+| `NEXT_PUBLIC_APP_BASE_DOMAIN` | `coledia.com` |
+| `APP_INTERNAL_API_URL` | `https://app.coledia.com` |
+| `APP_INTERNAL_API_SECRET` | must match `INTERNAL_API_SECRET` on app.coledia.com |
+| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` | your admin login |
+| `ADMIN_NOTIFY_EMAIL` | where provisioning checklists go (`m.wiesmann@wiesmann-se.ch`) |
 
-## Learn More
+### 4. Stripe (live mode)
 
-To learn more about Next.js, take a look at the following resources:
+1. Products → create **Starter (9 CHF/mo)**, **Club (29 CHF/mo)**,
+   **Organization (99 CHF/mo)**; copy the price IDs into env.
+2. Developers → Webhooks → add endpoint
+   `https://<controlcenter-domain>/api/stripe/webhook` with events:
+   `checkout.session.completed`, `customer.subscription.updated`,
+   `customer.subscription.deleted`, `invoice.payment_succeeded`,
+   `invoice.payment_failed`. Copy the signing secret (`whsec_...`) into
+   `STRIPE_WEBHOOK_SECRET`.
+3. Set the live secret key into `STRIPE_SECRET_KEY`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Local testing without the Stripe CLI:
+`npm run stripe:replay -- <containerId>` replays a paid checkout webhook.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 5. App side (coledia_app_1.0, one-time)
 
-## Deploy on Vercel
+- Redeploy **app.coledia.com** with the latest code (internal tenant API with
+  owner fields + suspension guard).
+- Set `INTERNAL_API_SECRET` on app.coledia.com (same value as
+  `APP_INTERNAL_API_SECRET` above).
+- Run `pnpm db:migrate` against the shared app database (applies the
+  `tenant_external_ref` migration).
+- The shared app MySQL must accept connections from the app-containers server.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 6. DNS
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- A record for the Controlcenter domain.
+- Per customer container: A record `{subdomain}.coledia.com` → app server IP
+  (no wildcard). The provisioning email/checklist reminds you of every step,
+  including the full per-container env block.
+
+## Development
+
+```bash
+npm install
+cp .env.example .env   # fill in values
+npx prisma migrate dev
+npm run db:seed
+npm run dev
+```

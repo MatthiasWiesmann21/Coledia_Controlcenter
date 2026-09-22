@@ -19,6 +19,7 @@ export const metadata: Metadata = {
     template: "%s · Coledia Controlcenter",
   },
   description: "Manage your Coledia containers and subscription.",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({

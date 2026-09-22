@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import {
@@ -27,11 +27,12 @@ import { cn } from "@/lib/utils";
 
 const STEPS = ["Basics", "Owner", "Appearance", "Subdomain", "Plan", "Review"] as const;
 
-type SubdomainCheck =
+type SubdomainCheck = { forValue?: string } & (
   | { state: "idle" }
   | { state: "checking" }
   | { state: "ok" }
-  | { state: "error"; message: string };
+  | { state: "error"; message: string }
+);
 
 const selectClass =
   "flex h-10 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring";
@@ -45,7 +46,7 @@ export function OnboardingWizard() {
 
   const {
     register,
-    watch,
+    control,
     trigger,
     setValue,
     handleSubmit,
@@ -68,33 +69,42 @@ export function OnboardingWizard() {
     mode: "onTouched",
   });
 
-  const values = watch();
-  const subdomain = watch("subdomain");
-  const ownerMode = watch("ownerMode");
+  // useWatch is the React-Compiler-safe way to read live form values.
+  const values = useWatch({ control }) as OnboardingInput;
+  const subdomain = values.subdomain;
+  const ownerMode = values.ownerMode;
 
-  // Debounced live availability check for the subdomain step.
+  // Debounced live availability check for the subdomain step. Results are
+  // tagged with the checked value so stale results are ignored on render.
   useEffect(() => {
     const candidate = subdomain?.toLowerCase() ?? "";
-    if (!candidate || candidate.length < 3) {
-      setSubdomainCheck({ state: "idle" });
-      return;
-    }
-    setSubdomainCheck({ state: "checking" });
+    if (!candidate || candidate.length < 3) return;
     const t = setTimeout(async () => {
+      setSubdomainCheck({ state: "checking", forValue: candidate });
       try {
         const res = await fetch(`/api/subdomain-check?s=${encodeURIComponent(candidate)}`);
         const data = (await res.json()) as { available: boolean; reason?: string };
         setSubdomainCheck(
           data.available
-            ? { state: "ok" }
-            : { state: "error", message: data.reason ?? "Not available" },
+            ? { state: "ok", forValue: candidate }
+            : { state: "error", forValue: candidate, message: data.reason ?? "Not available" },
         );
       } catch {
-        setSubdomainCheck({ state: "idle" });
+        setSubdomainCheck({ state: "idle", forValue: candidate });
       }
     }, 400);
     return () => clearTimeout(t);
   }, [subdomain]);
+
+  // Displayed check state: anything not matching the current input is treated
+  // as "checking" (a fresh result is on its way after the debounce).
+  const candidate = subdomain?.toLowerCase() ?? "";
+  const shownCheck: SubdomainCheck =
+    candidate.length >= 3
+      ? subdomainCheck.forValue === candidate
+        ? subdomainCheck
+        : { state: "checking" }
+      : { state: "idle" };
 
   const stepFields = useMemo<(keyof OnboardingInput)[][]>(
     () => [
@@ -111,7 +121,7 @@ export function OnboardingWizard() {
   async function next() {
     const ok = await trigger(stepFields[step]);
     if (!ok) return;
-    if (stepFields[step].includes("subdomain") && subdomainCheck.state === "error") return;
+    if (stepFields[step].includes("subdomain") && shownCheck.state === "error") return;
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
 
@@ -130,7 +140,7 @@ export function OnboardingWizard() {
     }
     if (result.url) {
       // Redirect to Stripe Checkout
-      window.location.href = result.url;
+      window.location.assign(result.url);
       return;
     }
     setSubmitError("Unexpected response — please try again.");
@@ -371,23 +381,23 @@ export function OnboardingWizard() {
                   }}
                 />
                 <span className="text-sm text-muted-foreground">
-                  .{process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.app"}
+                  .{process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.com"}
                 </span>
               </div>
               <FieldError message={errors.subdomain?.message} />
-              {!errors.subdomain && subdomainCheck.state === "checking" && (
+              {!errors.subdomain && shownCheck.state === "checking" && (
                 <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <Loader2 className="size-3.5 animate-spin" /> Checking availability…
                 </p>
               )}
-              {!errors.subdomain && subdomainCheck.state === "ok" && (
+              {!errors.subdomain && shownCheck.state === "ok" && (
                 <p className="flex items-center gap-1.5 text-sm text-success">
                   <Check className="size-3.5" /> Available
                 </p>
               )}
-              {!errors.subdomain && subdomainCheck.state === "error" && (
+              {!errors.subdomain && shownCheck.state === "error" && (
                 <p className="flex items-center gap-1.5 text-sm text-destructive">
-                  <CircleAlert className="size-3.5" /> {subdomainCheck.message}
+                  <CircleAlert className="size-3.5" /> {shownCheck.message}
                 </p>
               )}
             </div>
@@ -461,7 +471,7 @@ export function OnboardingWizard() {
               />
               <ReviewRow
                 label="Address"
-                value={`${values.subdomain}.${process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.app"}`}
+                value={`${values.subdomain}.${process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.com"}`}
               />
               <ReviewRow
                 label="Theme"

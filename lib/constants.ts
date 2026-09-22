@@ -144,6 +144,6 @@ export const RESERVED_SUBDOMAINS = [
 
 // ─── Misc ────────────────────────────────────────────────────────
 export function appUrlForSubdomain(subdomain: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.app";
+  const base = process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.com";
   return `https://${subdomain}.${base}`;
 }

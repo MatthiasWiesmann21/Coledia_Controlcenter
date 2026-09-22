@@ -168,6 +168,35 @@ export async function syncContainerToApp(
 }
 
 /**
+ * Copy-paste-ready environment block for a new app container (Dokploy).
+ * Shared by the admin provisioning card and the operator email.
+ * Placeholders (<...>) are filled in by the operator — the Controlcenter does
+ * not store SMTP/Stripe secrets per container.
+ */
+export function containerEnvLines(container: {
+  subdomain: string;
+  appTenantId: string;
+}): string[] {
+  const url = appUrlForSubdomain(container.subdomain);
+  return [
+    `TENANT_ID=${container.appTenantId}`,
+    `DATABASE_URL=<shared app database URL>`,
+    `BETTER_AUTH_SECRET=<new random secret>`,
+    `BETTER_AUTH_URL=${url}`,
+    `NEXT_PUBLIC_APP_URL=${url}`,
+    `SMTP_HOST=<platform SMTP>`,
+    `SMTP_PORT=465`,
+    `SMTP_USER=<platform SMTP user>`,
+    `SMTP_PASSWORD=<platform SMTP password>`,
+    `SMTP_FROM=Coledia <noreply@coledia.com>`,
+    `STORAGE_PATH=./uploads`,
+    `# Optional: only if in-app course sales are used`,
+    `# STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET / NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`,
+    `# Realtime: TBD — leave NEXT_PUBLIC_REALTIME_URL unset for now`,
+  ];
+}
+
+/**
  * Email the operator the manual Dokploy provisioning checklist with the full
  * onboarding form data. `seeded` reflects whether the app-side tenant was
  * created successfully — if not, the mail asks for a reseed via the admin UI.
@@ -199,6 +228,7 @@ export async function notifyAdminProvisioningRequired(
       ? `<p style="color:#b45309"><strong>⚠️ App seeding failed.</strong> Open the admin area and use <em>Reseed</em> before provisioning the container.</p>`
       : "";
 
+  const envBlock = containerEnvLines(container).join("\n");
   const text = [
     `New paid container: ${container.name}`,
     "",
@@ -213,10 +243,12 @@ export async function notifyAdminProvisioningRequired(
     `  Customer:    ${container.user.name ?? ""} <${container.user.email}>`,
     "",
     "Dokploy steps:",
-    `1. Create a new application from repo coledia_app_1.0`,
-    `2. Set env var: TENANT_ID=${container.appTenantId}`,
-    `3. Map domain: ${container.subdomain}.${process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.app"} → the container port`,
-    `4. Deploy, then mark the container as provisioned in the Controlcenter admin area`,
+    `1. DNS: point ${container.subdomain}.${process.env.NEXT_PUBLIC_APP_BASE_DOMAIN ?? "coledia.com"} at the app server (no wildcard — one record per container)`,
+    `2. Create a new application in Dokploy from repo coledia_app_1.0`,
+    `3. Set the container environment:`,
+    envBlock,
+    `4. Map the domain in Dokploy (HTTPS cert) → the container port`,
+    `5. Deploy, then mark the container as provisioned in the Controlcenter admin area`,
     "",
     `Container ID: ${container.id}`,
   ].join("\n");
@@ -239,9 +271,10 @@ ${seedWarningHtml}
 </table>
 <h3>Dokploy checklist</h3>
 <ol>
-  <li>Create a new application from repo <code>coledia_app_1.0</code></li>
-  <li>Set env var: <code>TENANT_ID=${container.appTenantId}</code></li>
-  <li>Map domain <code>${appUrl.replace("https://", "")}</code> to the container port</li>
+  <li>DNS: point <code>${appUrl.replace("https://", "")}</code> at the app server (no wildcard — one record per container)</li>
+  <li>Create a new application in Dokploy from repo <code>coledia_app_1.0</code></li>
+  <li>Set the container environment:<br><pre>${envBlock.replace(/</g, "&lt;")}</pre></li>
+  <li>Map the domain in Dokploy (HTTPS cert) to the container port</li>
   <li>Deploy, then mark the container as provisioned in the Controlcenter admin area</li>
 </ol>
 <p>Container ID: <code>${container.id}</code></p>`,

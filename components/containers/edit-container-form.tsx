@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
@@ -38,7 +38,7 @@ export function EditContainerForm({ container }: { container: ContainerEditDefau
   const [saved, setSaved] = useState(false);
   const {
     register,
-    watch,
+    control,
     setValue,
     handleSubmit,
     formState: { errors, isSubmitting },
@@ -52,7 +52,7 @@ export function EditContainerForm({ container }: { container: ContainerEditDefau
     },
   });
 
-  const themePreset = watch("themePreset");
+  const themePreset = useWatch({ control, name: "themePreset" });
 
   async function onSubmit(values: EditValues) {
     setError(null);
